@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<calendar>
+  <holiday type="International">
+    <name>International Lefthanders Day</name>
+    <date>
+      <month>August</month>
+      <day>13</day>
+    </date>
+  </holiday>
+  <holiday type="Personal">
+    <name>Rover's birthday</name>
+    <date>
+      <month>October</month>
+      <day>12</day>
+    </date>
+  </holiday>
+  <holiday type="National">
+    <name>Groundhog Day</name>
+    <date>
+      <month>February</month>
+      <day>2</day>
+    </date>
+  </holiday>
+  <holiday type="State">
+    <name>Kamehameha Day</name>
+    <date>
+      <month>June</month>
+      <day>11</day>
+    </date>
+  </holiday>
+</calendar>

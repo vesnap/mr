@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<XVar Id="cdx9" Type="Dictionary">
+<XVar Id="Base.AccruedPremium" Type="Multi" Value="" Rows="1" Columns="1">
+<Row Id="0">
+<Col Id="0" Type="Num" Value="0"/>
+</Row>
+</XVar>
+<XVar Id="TrancheAnalysis.IndexDuration" Type="Multi" Value="" Rows="1" Columns="1">
+<Row Id="0">
+<Col Id="0" Type="Num" Value="3.4380728252313069"/>
+</Row>
+</XVar>
+<XVar Id="TrancheAnalysis.IndexLevel01" Type="Multi" Value="" Rows="1" Columns="1">
+<Row Id="0">
+<Col Id="0" Type="Num" Value="30693.926279941188"/>
+</Row>
+</XVar>
+<XVar Id="TrancheAnalysis.TrancheDelta" Type="Multi" Value="" Rows="1" Columns="1">
+<Row Id="0">
+<Col Id="0" Type="Num" Value="8.9304387917502073"/>
+</Row>
+</XVar>
+<XVar Id="TrancheAnalysis.TrancheDuration" Type="Multi" Value="" Rows="1" Columns="1">
+<Row Id="0">
+<Col Id="0" Type="Num" Value="3.0775955481964035"/>
+</Row>
+</XVar>
+</XVar>

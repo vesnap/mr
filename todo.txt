@@ -1,0 +1,670 @@
+
+add data source (name, url, type of output, api key)
+extract data
+transform data
+map data
+aggregate data
+transform data
+pipes and filters
+imam template i u njega stavljam podatke
+
+
+u camelu
+new jndi context
+bind normalizer
+camel context u njega
+add routes
+	configure
+	from
+	marshall
+	rss
+	to
+	to
+	
+	
+http://code.google.com/p/mavenequakecamel/source/browse/maventest/src/main/java/de/fhb/equakecamel/?r=23	
+	package de.fhb.equakecamel;
+
+import java.io.File;
+import java.util.HashMap;
+import java.util.Map;
+
+
+import org.apache.camel.CamelContext;
+import org.apache.camel.Exchange;
+import org.apache.camel.builder.RouteBuilder;
+import org.apache.camel.impl.DefaultCamelContext;
+import org.apache.camel.processor.aggregate.AggregationStrategy;
+import org.apache.camel.util.jndi.JndiContext;
+
+import com.sun.grizzly.http.SelectorThread;
+import com.sun.jersey.api.container.grizzly.GrizzlyWebContainerFactory;
+
+import de.fhb.equakecamel.EarthQuakeComparer;
+import de.fhb.equakecamel.EnrichWithWeather;
+import de.fhb.equakecamel.Normalizer;
+
+/**
+ * 
+ *
+ */
+public class App{
+        
+    public static void main( String[] args ) throws Exception {
+        
+          final String baseUri = "http://localhost:9998/";
+                   final Map<String, String> initParams = 
+                                       new HashMap<String, String>();
+           
+                   initParams.put("de.fhb.equakecamel.config.property.packages", "de.fhb.equakecamel");
+          
+                  System.out.println("Starting grizzly...");
+                  SelectorThread threadSelector = 
+                          GrizzlyWebContainerFactory.create(baseUri, initParams);
+                  System.out.println(String.format("Jersey app started with WADL available at %sapplication.wadl\n" + 
+                    "Try out %shelloworld\nHit enter to stop it...", baseUri, baseUri));
+                  System.in.read();
+                  threadSelector.stopEndpoint();
+                  System.exit(0);
+
+        
+        
+//      while(true){
+//              Thread.sleep(3600000);
+//              startJndiContext();
+//      }
+        
+    }           
+        
+        
+    public static void startJndiContext() throws Exception{
+        
+        
+        JndiContext jndiContext = new JndiContext();
+        jndiContext.bind("normalizer", new Normalizer());
+        CamelContext contextPotsdam = new DefaultCamelContext(jndiContext);
+                contextPotsdam.addRoutes(new RouteBuilder() 
+                {
+                        public void configure() {
+                                
+                                from("rss:http://geofon.gfz-potsdam.de/db/eqinfo.php?fmt=rss&throttleEntries=false" )
+                                .marshal()
+                                .rss()
+                                .to("bean:normalizer?method=gfzpToEarthquake")
+                                .to("file:data/splitted");
+                                
+                        }
+                });
+                
+                CamelContext contextUSGS = new DefaultCamelContext(jndiContext);                
+                contextUSGS.addRoutes(new RouteBuilder() 
+                {
+                        public void configure() {
+                                
+                                from("rss:http://earthquake.usgs.gov/eqcenter/catalogs/eqs1day-M2.5.xml?throttleEntries=false" )
+                                .marshal()
+                                .rss()
+                                .to("bean:normalizer?method=usgsToEarthquake")
+                                .to("file:data/splitted");
+                        
+                        }
+                });
+                
+                contextPotsdam.start();
+                contextUSGS.start();
+                
+                Thread.sleep(7500);
+                
+                contextPotsdam.stop();
+                contextUSGS.stop();
+                
+                
+                //comparer
+        JndiContext context = new JndiContext();
+        context.bind("EarthQuakeComparer",new EarthQuakeComparer());
+        context.bind("enrichWithWeather", new EnrichWithWeather());
+        
+        //read in database
+                CamelContext database = new DefaultCamelContext(context);               
+                database.addRoutes(new RouteBuilder(){
+                        public void configure() {
+                                from("file:sorted?recursive=true")
+                                .convertBodyTo(String.class)
+                                .to("bean:EarthQuakeComparer?method=readDatabase")
+                                .choice()
+                                .when().xpath("/earthquake/area/text() = 'NE'").to("file:sorted")
+                                .when().xpath("/earthquake/area/text() = 'NW'").to("file:sorted")
+                                .when().xpath("/earthquake/area/text() = 'SE'").to("file:sorted")
+                                .when().xpath("/earthquake/area/text() = 'SW'").to("file:sorted")
+                                .when().xpath("/area/text() = 'OVER'").end()
+                                ;
+                        }
+                });
+                database.start();
+                Thread.sleep(2000);
+                database.stop();
+        
+        
+                CamelContext comparer = new DefaultCamelContext(context);               
+                comparer.addRoutes(new RouteBuilder(){
+                        public void configure() {
+                                from("file:data/splitted?delete=true")
+                                .convertBodyTo(String.class)
+                                .to("bean:enrichWithWeather?method=enrich")
+                                .to("bean:EarthQuakeComparer?method=compareXML")
+                                .choice()
+                                .when().xpath("/earthquake/area/text() = 'NE'").to("file:sorted/NE")
+                                .when().xpath("/earthquake/area/text() = 'NW'").to("file:sorted/NW")
+                                .when().xpath("/earthquake/area/text() = 'SE'").to("file:sorted/SE")
+                                .when().xpath("/earthquake/area/text() = 'SW'").to("file:sorted/SW")
+                                .when().xpath("/area/text() = 'DOUBLE'")
+                                ;
+                        }
+                });
+                comparer.start();       
+                Thread.sleep(15000);
+                comparer.stop();
+                
+                //emailsenden part
+                //TODO checken wann die erdbeben stärker als 5,5 sind oder mehr als 5erdbeben im gleichen bereich sind.
+        CamelContext emailSender = new DefaultCamelContext(context);            
+                emailSender.addRoutes(new RouteBuilder(){
+                        public void configure() {
+                                //solange nicht klar ist was gesendet wird bleibt das senden auskommentiert
+                                //wir sind ja keine spammer
+                                from("file:mailer?noop=true")
+                                .convertBodyTo(String.class)
+                                .to("bean:EarthQuakeComparer?method=sendMails")
+                                .choice()
+                                .when().xpath("mailtype/text() = 'newsletter'").to("bean:EarthQuakeComparer?method=createMail")
+                                .to("smtp://mail.gmx.net?password=887137mabi" +
+                                                "&username=earthquakemelder@gmx.de" +
+                                                "&debugMode=true" +
+                                                "&from=earthquakemelder@gmx.de" +
+                                                "&to=tepoo@gmx.de,dereinaeugige@googlemail.com,schmseba@fh-brandenburg.de" +
+                                                "&subject=ErdbebenMeldungen")
+                                .to("file:backup")
+                                .when().xpath("mailtype/text() = 'nothing'")
+                                .end();
+                                ;
+                        }
+                });
+                 
+                emailSender.start();
+                Thread.sleep(10000);
+                emailSender.stop();
+                
+                //woraround zum löschen des splitted ordners
+                File[] splittedList = (new File("data/splitted")).listFiles();
+                for(File splitted : splittedList){
+                        splitted.delete();
+                }
+    }
+}
+
+package de.fhb.equakecamel;
+
+import org.apache.camel.Exchange;
+import org.apache.camel.language.XPath;
+
+public class Normalizer {
+
+        public void gfzpToEarthquake(Exchange _exchange, @XPath("/rss/channel/item/title") String _title, @XPath("/rss/channel/item/description") String _desc){
+                _title = _title.replace("<title>", "").replace("</title>", "");
+                _desc = _desc.replace("<description>", "").replace("</description>", "");
+                
+                String[] oha = _desc.substring(22).replaceAll("   ", " ").split(" ");
+                String latitude = "";
+                String longitude = "";
+                String area = "";
+                if(oha[1].equals("N")){
+                        latitude = oha[0];
+                if(oha[3].equals("E")){
+                        area = "NE";
+                }else{
+                        area = "NW";
+                }
+        }else{
+                latitude = "-" + oha[0];
+                if(oha[3].equals("E")){
+                        area = "SE";
+                }else{
+                        area = "SW";
+                }
+        }
+        if(oha[3].equals("E")){ 
+                longitude = oha[2];
+        }else{
+                longitude = "-" + oha[2];
+        }
+//              System.out.println("---");
+//              System.out.println(oha[1] +" "+ oha[0] +"  "+  oha[3] +" "+ oha[2]);
+//              System.out.println(latitude+"  "+longitude);
+//        System.out.println(area.substring(0,1) + "         " + area.substring(1));
+        
+        _exchange.getOut().setBody(createEarthquake(_title.substring(7), _desc.substring(0, 19), _title.substring(2,5), latitude, longitude, oha[4], area));
+        }
+        
+        public void usgsToEarthquake(Exchange _exchange, @XPath("rss/channel/item") String _item){
+                
+                String[] oha = _item.split("      ");
+                
+                String title = oha[1].replace("<title>", "").replace("</title>\r\n", "");
+                String latitude = oha[3].replace("<geo:lat xmlns:geo=\"http://www.w3.org/2003/01/geo/wgs84_pos#\">", "").replace("</geo:lat>\r\n", "");
+                String longitude = oha[4].replace("<geo:long xmlns:geo=\"http://www.w3.org/2003/01/geo/wgs84_pos#\">", "").replace("</geo:long>\r\n", "");
+                String depth = oha[10].replace("<dc:subject xmlns:dc=\"http://purl.org/dc/elements/1.1/\">", "").replace(" km</dc:subject>\r\n", "");
+                String date = oha[11].replace("<dc:date xmlns:dc=\"http://purl.org/dc/elements/1.1/\">", "").replace("Z</dc:date>\r\n    </item>", "").replace("T", " ");
+                String area = "";
+                if(Double.parseDouble(latitude) > 0){
+                if(Double.parseDouble(longitude) > 0){
+                        area = "NE";
+                }else{
+                        area = "NW";
+                }
+        }else{
+                if(Double.parseDouble(longitude) > 0){
+                        area = "SE";
+                }else{
+                        area = "SW";
+                }
+        }
+                
+//              System.out.println("----");
+//              System.out.println(latitude +"  "+ longitude);
+//              System.out.println(Double.parseDouble(latitude) +"  "+ Double.parseDouble(longitude));
+//              System.out.println(area.substring(0,1) + "         " + area.substring(1));
+                
+                _exchange.getOut().setBody(createEarthquake(title.substring(7), date, title.substring(2,5), latitude, longitude, depth, area));
+        }
+        
+        private String createEarthquake(String _region, String _date, String _mag, String _lat, String _long, String _depth, String _area){
+                String eq = "";
+                
+//              eq += "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"; 
+                eq += "<earthquake>\n";
+        eq += "  <region>" + _region + "</region>\n";
+        eq += "  <date>" + _date + "</date>\n";
+        eq += "  <magnitude>" + _mag + "</magnitude>\n";
+        eq += "  <latitude>" + _lat + "</latitude>\n";
+        eq += "  <longitude>" + _long + "</longitude>\n";
+        eq += "  <depth>" + _depth + "</depth>\n";
+        eq += "  <area>" + _area +"</area>\n";
+        eq += "</earthquake>";
+        
+                return eq;
+        }
+}
+
+package de.fhb.equakecamel;
+
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
+import java.util.ArrayList;
+import java.util.Date;
+
+import javax.xml.xpath.XPath;
+import javax.xml.xpath.XPathExpressionException;
+import javax.xml.xpath.XPathFactory;
+
+import org.xml.sax.InputSource;
+
+import com.sun.syndication.io.FeedException;
+
+public class EarthQuakeComparer {
+        
+        ArrayList<EarthQuakeObject> earthQuakeObjectList = new ArrayList<EarthQuakeObject>();
+        ArrayList<EarthQuakeObject> NWListNew = new ArrayList<EarthQuakeObject>();
+        ArrayList<EarthQuakeObject> NEListNew = new ArrayList<EarthQuakeObject>();
+        ArrayList<EarthQuakeObject> SWListNew = new ArrayList<EarthQuakeObject>();
+        ArrayList<EarthQuakeObject> SEListNew = new ArrayList<EarthQuakeObject>();
+        ArrayList<EarthQuakeObject> strongQuakes = new ArrayList<EarthQuakeObject>();
+        
+        String xmlFile;
+
+        public String compareXML(String _xmlFile) throws FeedException, IOException, XPathExpressionException{
+                xmlFile = _xmlFile;
+                
+                //xpaths für die einzelnen informationen
+                String locationXPath =  getXPathInformation("/earthquake/region");
+                String dateXPath =              getXPathInformation("/earthquake/date");
+                String magnitudeXPath = getXPathInformation("/earthquake/magnitude");
+                String latitudeXPath =  getXPathInformation("/earthquake/latitude");
+                String longitudeXPath = getXPathInformation("/earthquake/longitude");
+                String areaXPath =              getXPathInformation("/earthquake/area");
+                String windSpeedInKmph = getXPathInformation("/earthquake/windSpeedKmph");
+                String windDirection    = getXPathInformation("/earthquake/windDir");
+                String weatherDesc              = getXPathInformation("/earthquake/weatherDesc");
+                String tempMinC                 = getXPathInformation("/earthquake/tempMinC");
+                String tempMaxC         = getXPathInformation("/earthquake/tempMaxC");
+                
+                EarthQuakeObject newEarthQuake = new EarthQuakeObject(locationXPath, dateXPath, Double.parseDouble(magnitudeXPath), Double.parseDouble(latitudeXPath),
+                                                                                                                Double.parseDouble(longitudeXPath), areaXPath, windSpeedInKmph, windDirection, weatherDesc, tempMinC, tempMaxC, xmlFile);
+                
+                boolean allreadyExists = sameEarthQuake(newEarthQuake);
+                if(!allreadyExists || earthQuakeObjectList.size() == 0){
+                        earthQuakeObjectList.add(newEarthQuake);
+                        
+                        //listen werden später fürs email versenden genutzt
+                        if(newEarthQuake.getArea().equals("NW")){
+                                NWListNew.add(newEarthQuake);
+                        } else if(newEarthQuake.getArea().equals("NE")){
+                                NEListNew.add(newEarthQuake);
+                        } else if(newEarthQuake.getArea().equals("SW")){
+                                SWListNew.add(newEarthQuake);
+                        } else if(newEarthQuake.getArea().equals("SE")){
+                                SEListNew.add(newEarthQuake);
+                        }
+                        
+                        if(newEarthQuake.getMagnitude() > 5.5){
+                                strongQuakes.add(newEarthQuake);
+                        }
+                        return xmlFile;
+                } else {
+                        return "<area>DOUBLE</area>";
+                }
+        }
+
+        //method zum prüfen ob das erbeben schon in der liste steht
+        private boolean sameEarthQuake(EarthQuakeObject newEarthQuake) {
+                for(EarthQuakeObject listObject : earthQuakeObjectList){
+                        double maxGEORange = 1.5;
+                        int maxTimeRangeInMillis = 30000;
+                        
+                        //auf Datum prüfen
+                        if(listObject.getDate().getTime() <= newEarthQuake.getDate().getTime()+maxTimeRangeInMillis && listObject.getDate().getTime() >= newEarthQuake.getDate().getTime()-maxTimeRangeInMillis){
+                                //gleiche millisekunden anzahl +- maxTimeRange
+                                //auf Position prüfen
+                                if(listObject.getLatitude() <= newEarthQuake.getLatitude()+maxGEORange && listObject.getLatitude() >= newEarthQuake.getLatitude()-maxGEORange){ 
+                                        //wenn die latitude des listenobjektes zuweit links oder rechts vom
+                                        //neuen erdbeben liegt kann es nicht das gleiche sein
+                                        if(listObject.getLongitude() <= newEarthQuake.getLongitude()+maxGEORange && listObject.getLongitude() >= newEarthQuake.getLongitude()-maxGEORange){
+                                                //wenn die longitude des listenobjektes zuweit über oder unter dem
+                                                //neuen erdbeben liegt kann es nicht das gleiche sein
+                                                return true;
+                                        } else {
+                                                
+                                        }
+                                }
+                                
+                        } else {
+//                                                              System.out.println("Ungleiche minute");
+                                //ungleiche Minute
+                        }       
+                }
+                return false;
+        }
+        
+        //methode zum erfragen der information mittels xpath
+        private String getXPathInformation(String expression) throws XPathExpressionException, UnsupportedEncodingException{
+                InputStream is = new ByteArrayInputStream(xmlFile.getBytes("UTF8")); 
+                XPath xpath = XPathFactory.newInstance().newXPath();
+                InputSource inputSource = new InputSource(is);
+                
+                //xpaths für die einzelnen informationen
+                return xpath.evaluate(expression, inputSource);
+        }
+        
+        public String readDatabase(String _xmlFile) throws XPathExpressionException, UnsupportedEncodingException{
+                xmlFile = _xmlFile;
+                
+                //xpaths für die einzelnen informationen
+                String locationXPath =  getXPathInformation("/earthquake/region");
+                String dateXPath =              getXPathInformation("/earthquake/date");
+                String magnitudeXPath = getXPathInformation("/earthquake/magnitude");
+                String latitudeXPath =  getXPathInformation("/earthquake/latitude");
+                String longitudeXPath = getXPathInformation("/earthquake/longitude");
+                String areaXPath =              getXPathInformation("/earthquake/area");
+                String windSpeedInKmph = getXPathInformation("/earthquake/windSpeedKmph");
+                String windDirection    = getXPathInformation("/earthquake/windDir");
+                String weatherDesc              = getXPathInformation("/earthquake/weatherDesc");
+                String tempMinC                 = getXPathInformation("/earthquake/tempMinC");
+                String tempMaxC         = getXPathInformation("/earthquake/tempMaxC");
+                
+                EarthQuakeObject newEarthQuake = new EarthQuakeObject(locationXPath, dateXPath, Double.parseDouble(magnitudeXPath), Double.parseDouble(latitudeXPath),
+                                                                                                                Double.parseDouble(longitudeXPath), areaXPath, windSpeedInKmph, windDirection, weatherDesc, tempMinC, tempMaxC, xmlFile);
+                
+                long timeRange = 172800000; //ist das erdbeben mehr als 2tage her?
+                if((newEarthQuake.getDate().getTime()+timeRange) >= (new java.util.Date()).getTime()){
+                        earthQuakeObjectList.add(newEarthQuake);
+                        return xmlFile;
+                } else {
+                        return "<area>OVER</area>";
+                }
+        }
+        
+        public String sendMails(){
+                String mail = "";
+                if(NWListNew.size() >= 5 || NEListNew.size() >= 5 || SWListNew.size() >= 5 || SEListNew.size() >= 5 || strongQuakes.size() > 0){
+                        mail += "\t<mailtype>newsletter</mailtype>\n";
+                } else {
+                        mail += "\t<mailtype>nothing</mailtype>\n";
+                }
+                return mail;
+        }
+        
+        public String createMail(String noop){
+                System.out.println("Email wird versendet");
+                String mail = "";
+                
+                if(NWListNew.size() >= 5){
+                        mail += "---- Erdbeben im Nordwesten ----\n";
+                        for(EarthQuakeObject quake : NWListNew){
+                                mail += "Datum: "+ quake.getStringDate()+"\n";
+                                mail += "Region: " + quake.getLocation()+"\n";
+                                mail += "Koordinaten(Lat/Long): " + quake.getLatitude()+"/"+ quake.getLongitude()+"\n";
+                                mail += "Erdbeben Stärke: " + quake.getMagnitude()+"\n";
+                                mail += "Wetter: " + quake.getWeatherDesc()+"\n";
+                                mail += "Maximaltemperatur: " + quake.getTempMaxC()+"\n";
+                                mail += "Minimaltemperator: " + quake.getTempMinC()+"\n";
+                                mail += "Windgeschwindigkeit: " + quake.getWindSpeedInKmph()+"\n";
+                                mail += "Windrichtung :" + quake.getWindDirection()+"\n";
+                                mail += "\n";
+                        }
+                        mail += "\n\n";
+                }
+                
+                if(NEListNew.size() >= 5){
+                        mail += "---- Erdbeben im Nordosten ----\n";
+                        for(EarthQuakeObject quake : NEListNew){
+                                mail += "Datum: "+ quake.getStringDate()+"\n";
+                                mail += "Region: " + quake.getLocation()+"\n";
+                                mail += "Koordinaten(Lat/Long): " + quake.getLatitude()+"/"+ quake.getLongitude()+"\n";
+                                mail += "Erdbeben Stärke: " + quake.getMagnitude()+"\n";
+                                mail += "Wetter: " + quake.getWeatherDesc()+"\n";
+                                mail += "Maximaltemperatur: " + quake.getTempMaxC()+"\n";
+                                mail += "Minimaltemperatur: " + quake.getTempMinC()+"\n";
+                                mail += "Windgeschwindigkeit: " + quake.getWindSpeedInKmph()+"\n";
+                                mail += "Windrichtung :" + quake.getWindDirection()+"\n";
+                                mail += "\n";
+                        }
+                        mail += "\n\n";
+                }
+                
+                if(SWListNew.size() >= 5){
+                        mail += "---- Erdbeben im Südwesten ----\n";
+                        for(EarthQuakeObject quake : SWListNew){
+                                mail += "Datum: "+ quake.getStringDate()+"\n";
+                                mail += "Region: " + quake.getLocation()+"\n";
+                                mail += "Koordinaten(Lat/Long): " + quake.getLatitude()+"/"+ quake.getLongitude()+"\n";
+                                mail += "Erdbeben Stärke: " + quake.getMagnitude()+"\n";
+                                mail += "Wetter: " + quake.getWeatherDesc()+"\n";
+                                mail += "Maximaltemperatur: " + quake.getTempMaxC()+"\n";
+                                mail += "Minimaltemperatur: " + quake.getTempMinC()+"\n";
+                                mail += "Windgeschwindigkeit: " + quake.getWindSpeedInKmph()+"\n";
+                                mail += "Windrichtung :" + quake.getWindDirection()+"\n";
+                                mail += "\n";
+                        }
+                        mail += "\n\n";
+                }
+                
+                if(SEListNew.size() >= 5){
+                        mail += "---- Erdbeben im Südosten ----\n";
+                        for(EarthQuakeObject quake : SEListNew){
+                                mail += "Datum: "+ quake.getStringDate()+"\n";
+                                mail += "Region: " + quake.getLocation()+"\n";
+                                mail += "Koordinaten(Lat/Long): " + quake.getLatitude()+"/"+ quake.getLongitude()+"\n";
+                                mail += "Erdbeben Stärke: " + quake.getMagnitude()+"\n";
+                                mail += "Wetter: " + quake.getWeatherDesc()+"\n";
+                                mail += "Maximaltemperatur: " + quake.getTempMaxC()+"\n";
+                                mail += "Minimaltemperatur: " + quake.getTempMinC()+"\n";
+                                mail += "Windgeschwindigkeit: " + quake.getWindSpeedInKmph()+"\n";
+                                mail += "Windrichtung :" + quake.getWindDirection()+"\n";
+                                mail += "\n";
+                        }
+                        mail += "\n\n";
+                }
+                
+                if(strongQuakes.size() > 0){
+                        mail += "---- Erdbeben der Stärke 5.5 oder höher ----\n";
+                        for(EarthQuakeObject quake : strongQuakes){
+                                mail += "Datum: "+ quake.getStringDate()+"\n";
+                                mail += "Region: " + quake.getLocation()+"\n";
+                                mail += "Koordinaten(Lat/Long): " + quake.getLatitude()+"/"+ quake.getLongitude()+"\n";
+                                mail += "Erdbeben Stärke: " + quake.getMagnitude()+"\n";
+                                mail += "Wetter: " + quake.getWeatherDesc()+"\n";
+                                mail += "Maximaltemperatur: " + quake.getTempMaxC()+"\n";
+                                mail += "Minimaltemperatur: " + quake.getTempMinC()+"\n";
+                                mail += "Windgeschwindigkeit: " + quake.getWindSpeedInKmph()+"\n";
+                                mail += "Windrichtung :" + quake.getWindDirection()+"\n";
+                                mail += "\n";
+                        }
+                }
+
+                return mail;
+        }
+        
+        public void clearLists(){
+                earthQuakeObjectList.clear();
+                SEListNew.clear();
+                SWListNew.clear();
+                NEListNew.clear();
+                NWListNew.clear();
+                strongQuakes.clear();
+        }
+}
+7package de.fhb.equakecamel;
+
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
+
+import javax.xml.xpath.XPathExpressionException;
+import javax.xml.xpath.XPathFactory;
+
+import org.apache.camel.Exchange;
+import org.apache.camel.language.XPath;
+import org.apache.commons.httpclient.DefaultHttpMethodRetryHandler;
+import org.apache.commons.httpclient.HttpClient;
+import org.apache.commons.httpclient.HttpException;
+import org.apache.commons.httpclient.HttpStatus;
+import org.apache.commons.httpclient.methods.GetMethod;
+import org.apache.commons.httpclient.params.HttpMethodParams;
+import org.xml.sax.InputSource;
+
+public class EnrichWithWeather {
+        
+        public void enrich(     Exchange _exchange,
+                        @XPath("/earthquake") String _message,
+                        @XPath("/earthquake/latitude/text()") String _latitude,
+                        @XPath("/earthquake/longitude/text()") String _longitude,
+                        @XPath("/earthquake/date/text()") String _date) {               
+                
+                if( !_message.isEmpty()) {
+                        double latitude = Double.parseDouble(_latitude);
+                        double longitude = Double.parseDouble(_longitude);              
+                        
+                        String weatherXML = requestWeather(latitude, longitude, _date.split(" ")[0] );
+                        
+                        String  windSpeedInKmph         = null,
+                                        windDirection           = null,
+                                        weatherDesc                     = null,
+                                        tempMinC                        = null,
+                                        tempMaxC                        = null;
+                        try {
+                                windSpeedInKmph = getXPathInformation(weatherXML, "/data/weather/windspeedKmph");
+                                windDirection   = getXPathInformation(weatherXML, "/data/weather/winddirection");
+                                weatherDesc             = getXPathInformation(weatherXML, "/data/weather/weatherDesc");
+                                tempMinC                = getXPathInformation(weatherXML, "/data/weather/tempMinC");
+                                tempMaxC                = getXPathInformation(weatherXML, "/data/weather/tempMaxC");
+                                
+                                String weatherAppendix =        "  <tempMinC>"+tempMinC+"</tempMinC>\n"+
+                                "  <tempMaxC>"+tempMaxC+"</tempMaxC>\n"+
+                                "  <windSpeedKmph>"+windSpeedInKmph+"</windSpeedKmph>\n"+
+                                "  <windDir>"+windDirection+"</windDir>\n"+
+                                "  <weatherDesc>"+weatherDesc+"</weatherDesc>\n"+
+                                "</earthquake>";
+
+                                String newMessage = _message.replace("</earthquake>", weatherAppendix); 
+                                
+                                _exchange.getOut().setBody(newMessage);
+                        
+                                // If an execption is throws the maximum free api key request is reached (500 / hour)
+                                // in this case nothing will append and the mesage wil be unenriched
+                        } catch (XPathExpressionException e) {
+                                _exchange.getOut().setBody(_message);
+                        } catch (UnsupportedEncodingException e) {
+                                _exchange.getOut().setBody(_message);
+                        }
+                }
+        }
+        
+        private String getXPathInformation(String xmlFile, String expression) throws XPathExpressionException, UnsupportedEncodingException{
+                
+                InputStream is = new ByteArrayInputStream(xmlFile.getBytes("UTF8")); 
+                javax.xml.xpath.XPath xpath = XPathFactory.newInstance().newXPath();
+                InputSource inputSource = new InputSource(is);
+                
+                return xpath.evaluate(expression, inputSource);
+        }
+        
+        public String requestWeather(double latitude, double longitube, String date) {
+
+                // be2d06c5eb134915112201 API-Key for www.worldweatheronline.com
+                String hostline =  "http://www.worldweatheronline.com";
+                
+                 // Create an instance of HttpClient.
+            HttpClient client = new HttpClient();
+
+            // Create a method instance.
+            // date -> example: 2011-01-23  JJJJ-MM-TT / YYYY-MM-DD
+            GetMethod method = new GetMethod(hostline + "/feed/weather.ashx?key=be2d06c5eb134915112201&" +
+                                "q=" + latitude + "," + longitube + "&cc=no&date=" + date + "&format=xml");
+            
+            // Provide custom retry handler is necessary
+            method.getParams().setParameter(HttpMethodParams.RETRY_HANDLER, 
+                        new DefaultHttpMethodRetryHandler(3, false));
+
+            try {
+              // Execute the method.
+              int statusCode = client.executeMethod(method);
+
+              if (statusCode != HttpStatus.SC_OK) {
+                System.err.println("Method failed: " + method.getStatusLine());
+              }
+
+              // Read the response body.
+              byte[] responseBody = method.getResponseBody();
+
+              // Deal with the response.
+              // Use caution: ensure correct character encoding and is not binary data        
+              return new String(responseBody);
+              
+            } catch (HttpException e) {
+              System.err.println("Fatal protocol violation: " + e.getMessage());
+              e.printStackTrace();
+            } catch (IOException e) {
+              System.err.println("Fatal transport error: " + e.getMessage());
+              e.printStackTrace();
+            } finally {
+              // Release the connection.
+              method.releaseConnection();
+            }           
+            
+            return null;
+            
+        }
+}
+Show details
