@@ -1,11 +1,59 @@
 (ns mashup-dsl
   (:use [info.kovanovic.camelclojure.dsl]
-     [clojure.test]
-    )
+     [clojure.test])
   (:import [org.apache.camel.component.mock MockEndpoint]
 	   [org.apache.camel.component.direct DirectEndpoint]
 	   [org.apache.camel ProducerTemplate]))
 
+
+(defn get-received-messages [endpoint]
+  (map #(.. % getIn getBody) (.getReceivedExchanges endpoint)))
+
+(defn get-received-message [endpoint]
+  (first (get-received-messages endpoint)))
+
+(defn file-endpoint [file-name]
+((str "file://" file-name)))
+
+(defn mock [url]
+  (MockEndpoint. (str "mock://" url)))
+
+(defn direct [url]
+  (DirectEndpoint. (str "direct://" url)))
+
+(defn- init [context endpoints]
+  (if-not (empty? endpoints)
+    (do (.setCamelContext (first endpoints) context)
+	(recur context (rest endpoints)))))
+(defn start-test [camel & endpoints]
+  (init camel endpoints)
+  (start camel))
+
+(defn send-text-message [camel endpoint message & headers]
+  (publish camel endpoint (fn [[m-body m-headers]]
+			    (if-not (nil? headers)
+			      [message {(first headers)
+					(second headers)}]
+			      [message m-headers]))))
+
+
+(defn stop-test [camel]
+  (stop camel))
+
+  (let [start (file-endpoint "calendar.xml")
+	end   (mock "end")
+
+	camel (create (route (from start)
+				   (router (if (true)) (process ((data (en-html/xml-resource "calendar.xml"))
+(en-html/select data [:events]))
+							]))
+				   (to end)))]
+    (start-test camel start end)
+    (send-text-message camel start "message")
+    (let [messages (get-received-messages end)]
+      (is (= (count messages) 2))
+   
+    (stop-test camel)))
 ;(defn get-data-from-feed [feed keyword]
  ; (
   ;  let[xml (events-url)
@@ -127,7 +175,8 @@
   
   ;filter za upite po vrednostima
   
-  ;transform
+  
+;transform
   
   
   ;publish to what type
