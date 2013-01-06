@@ -18,13 +18,18 @@
 
 
 ;internal data model - mapa sa vektorom za content, u content se stavlja ono sto se dobije iz zip str
-(defn list-of-contents [] (for [x (xml-seq (xml/parse data-url)) :when (= :title (:tag x))] (first (:content x))))
-(defn create-a-map [](zipmap (list-of-contents) (repeat :title)))
-(defmacro define-source [source-name title-value link-value updated-value summary-value]
-  '(def (symbol source-name) (hash-map :title title-value, :link link-value, :updated updated-value, :summary summary-value, :content {}) ))
-;First argument to def must be a Symbol, a ovo npr radi (def eventful (hash-map :title "events", :link "", :updated "", :summary "", :content {}) )
+;hocu sad ovde ovo da ponovim za svaki tag koji hocu i da spojim dole u mapu
+(defn list-of-contents [the-key] (for [x (xml-seq (xml/parse data-url)) :when (= the-key (:tag x))] (first (:content x))))
 
+(defn create-a-map [the-key](zipmap (list-of-contents the-key) (repeat the-key)))
 
+;ovo radi ali ne znam posle kako da ga koristim
+(defmacro defmodel [name & field-spec]
+  `(do (defstruct ~name ~@(take-nth 2 field-spec))
+       (def ~(symbol (str "*" name "-meta*"))
+         (reduce #(assoc %1 (first %2) (last %2))
+                 {}
+                 (partition 2 '~field-spec)))))
 ;for the content part
 (def data-url "http://api.eventful.com/rest/events/search?app_key=4H4Vff4PdrTGp3vV&keywords=music&location=Belgrade&date=Future")
 
@@ -38,12 +43,12 @@
 
 (defn data [url] (en-html/xml-resource url))
 
-(defn select-data[] (en-html/select data [:events]))
+(defn select-data[url] (en-html/select (data url) [:events]))
 ; pulls out a list of all of the root att attribute values
 
 
 (defmacro map-cols [seq & columns] (vec (`(hash-map #(nth % ~columns nil) ~seq))))
-(def data (en-html/xml-resource data-url));vektor sa svim
+(defn data [](en-html/xml-resource data-url));vektor sa svim
 ;(en-html/select data [:events]);mape tih tagova
 ;select value od :tag bude kao tag u toj mapi a select value od :value bude value
 ;od ovih mapa hocu da napravim mapu :tag val :content :val
@@ -130,11 +135,6 @@
  ( doseq [event (create-map-of-events)] 
    (let [performer (get event :start-time)]
      (case performer (not(nil?)) println performer))))  
- 
- 
- 
-(def events (xml/parse "http://api.eventful.com/rest/events/search?app_key=4H4Vff4PdrTGp3vV&keywords=music&location=Belgrade&date=Future"))
 
- (def zipped (z/xml-zip events))
-
+ 
 ;_exchange.getOut().setBody(createEarthquake(title.substring(7), date, title.substring(2,5), latitude, longitude, depth, area))
