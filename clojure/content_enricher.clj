@@ -2,6 +2,8 @@
 
   (:use [clojure.test]
         [info.kovanovic.camelclojure.dsl]
+        [clojure.set]
+
     ;[net.cgrand.enlive-html :as en-html]
     [test-utils]
     [datamodel]
@@ -26,7 +28,7 @@ merge-with union mess (data url))
   (let [start (file-comp "d:/calendar.xml")
 	end   (mock "end")
  url "http://api.eventful.com/rest/events/search?app_key=4H4Vff4PdrTGp3vV&keywords=music&location=Belgrade&date=Future"
- enriching-with-data (enrich start start url start (data url))
+ enriching-with-data (enrich start url start (data url))
 	camel (create (route (from start)
 enriching-with-data
 			     (to end)))]

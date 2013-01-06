@@ -4,83 +4,58 @@
     [net.cgrand.enlive-html :as en-html ])
   (:require
     [clojure.zip :as z] 
+    [clojure.data.zip.xml :only (attr text xml->)]
     [clojure.xml :as xml ]
     [clojure.contrib.zip-filter.xml :as zf]
     ))
 
- ;  [clojure.xml :as xml ]
-  ;          
+       
    ;         [clojure.contrib.zip-filter.xml :as zf]
     ;        [apicalls]
      ;       [clojure.java.io]
       ;      [clojure.contrib.str-utils] ))
- ;[clojure.data.zip.xml :only (attr text xml->)]
+ 
 
-(def eventful-events "http://api.eventful.com/rest/events/search?app_key=4H4Vff4PdrTGp3vV&keywords=music&location=Belgrade&date=Future")
 
 ;internal data model - mapa sa vektorom za content, u content se stavlja ono sto se dobije iz zip str
+(defn list-of-contents [] (for [x (xml-seq (xml/parse data-url)) :when (= :title (:tag x))] (first (:content x))))
+(defn create-a-map [](zipmap (list-of-contents) (repeat :title)))
 (defmacro define-source [source-name title-value link-value updated-value summary-value]
-  '(def source-name (hash-map :title title-value, :link link-value, :updated updated-value, :summary summary-value, :content {}) ))
-
-(defmacro create-map
-  [& syms]
-  (zipmap (map keyword syms) syms))
-
-
-(defn add-source [source-name title-value link-value updated-value summary-value]
-  (let [title title-value  link link-value updated updated-value summary summary-value] (create-map title link updated summary)))
+  '(def (symbol source-name) (hash-map :title title-value, :link link-value, :updated updated-value, :summary summary-value, :content {}) ))
+;First argument to def must be a Symbol, a ovo npr radi (def eventful (hash-map :title "events", :link "", :updated "", :summary "", :content {}) )
 
 
 ;for the content part
 (def data-url "http://api.eventful.com/rest/events/search?app_key=4H4Vff4PdrTGp3vV&keywords=music&location=Belgrade&date=Future")
-(def events-data (xml/parse data-url))
-(defn zipp [data] (zip/xml-zip data))
-(defn contents[] (xml-> (zipp data-url) :events :event))
-(defn get-struct-map [xml]
-  (if-not (empty? xml)
-    (let [stream (ByteArrayInputStream. (.getBytes (.trim xml)))]
-      (xml/parse stream))))
 
 
-(map (fn [elt] (or (:tag elt) elt)) (xml-seq events-data))
+(defn parsing [url](xml/parse url))
 
-(defn get-value [xml & tags]
-  (apply zf/xml1-> (zip/xml-zip (get-struct-map xml)) (conj (vec tags) zf/text)))
+(defn zipp [data] (z/xml-zip data))
 
-(defn data [url](en-html/xml-resource url))
+(defn contents[cont] 
+  (zf/xml-> cont :events :event :title))
+
+(defn data [url] (en-html/xml-resource url))
 
 (defn select-data[] (en-html/select data [:events]))
 ; pulls out a list of all of the root att attribute values
-(defn values [xml & tags]
-
-  (apply zf/xml1-> (zip/xml-zip (get-struct-map xml)) (conj (vec tags) zf/text)));umesto ovog conj nesto drugo
 
 
-(defn neka-fn[]
-  (map
-  (comp z/node z/up)
-  (@#'en-html/zip-select-nodes*
-   (map z/xml-zip (en-html/xml-resource "calendar.xml"))
-     [:holiday])))
-
-(def data (en-html/xml-resource data-url))
-(html/select data [:events])
+(defmacro map-cols [seq & columns] (vec (`(hash-map #(nth % ~columns nil) ~seq))))
+(def data (en-html/xml-resource data-url));vektor sa svim
+;(en-html/select data [:events]);mape tih tagova
+;select value od :tag bude kao tag u toj mapi a select value od :value bude value
+;od ovih mapa hocu da napravim mapu :tag val :content :val
 
 
-
-; gets the "column-value" pair for a single column
-(defn column-value [z](zf/xml1-> z
-           (zf/attr= :Id "cdx9") ; filter on id "cdx9" 
-           :XVar ; filter on XVars under it 
-           (zf/attr= :Id "TrancheAnalysis.IndexDuration") ; filter on id
-           value)) ; apply the value function on the result of above
 
 ; creates a map of every column key to it's corresponding value
-(apply merge (zf/xml-> zipp (zf/attr= :Id "cdx9") :XVar value))
+;(apply merge (zf/xml-> zipp (zf/attr= :Id "cdx9") :XVar value))
 
 
 (defn add-content [url coll]
-  (map :contents (zip/xml-zip (xml/parse url)) coll))
+  (map :contents (z/xml-zip (xml/parse url)) coll))
 
 ;import data source - connect to data source, 
 
@@ -103,7 +78,7 @@
 
 
  (defn musicBrainzToArtist[xz]
-  "Artists from musicBrainz transfeevered to struct from zipper tree made of feed output"
+  "Artists from musicBrainz transfered to struct from zipper tree made of feed output"
   (map (juxt 
         ;#(zf/xml1-> % :name text)  
         #(zf/xml1-> % :gender text) 
@@ -130,19 +105,18 @@
         #(zf/xml1-> % :title text) 
         #(zf/xml1-> % :performers :performer :name text) 
         #(zf/xml1-> % :start_time text) 
-         #(zf/xml1-> % :end_time text)
-         )
+         #(zf/xml1-> % :end_time text))
      (zf/xml-> xz :events :event)))
 
  (defn create-map-of-events []
-   (map #(apply struct event %) (get-events (zip/xml-zip (xml/parse "http://api.eventful.com/rest/events/search?app_key=4H4Vff4PdrTGp3vV&keywords=music&location=Belgrade&date=Future")))))
+   (map #(apply struct event %) (get-events (z/xml-zip (xml/parse "http://api.eventful.com/rest/events/search?app_key=4H4Vff4PdrTGp3vV&keywords=music&location=Belgrade&date=Future")))))
 
  (defn create-map-of-artists-lastfm  []
-  (map #(apply struct artist-lastfm %) (lastFmToArtist (zip/xml-zip (xml/parse "http://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=Cher&api_key=b25b959554ed76058ac220b7b2e0a026")))))
+  (map #(apply struct artist-lastfm %) (lastFmToArtist (z/xml-zip (xml/parse "http://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=Cher&api_key=b25b959554ed76058ac220b7b2e0a026")))))
  
  (defn create-map-of-artists-musicbrainz  []
   
-   (map #(apply struct artist-musicbrainz %) (musicBrainzToArtist (zip/xml-zip (xml/parse "http://www.musicbrainz.org/ws/2/artist/?query=artist:cher")))))
+   (map #(apply struct artist-musicbrainz %) (musicBrainzToArtist (z/xml-zip (xml/parse "http://www.musicbrainz.org/ws/2/artist/?query=artist:cher")))))
  
  
 
@@ -161,6 +135,6 @@
  
 (def events (xml/parse "http://api.eventful.com/rest/events/search?app_key=4H4Vff4PdrTGp3vV&keywords=music&location=Belgrade&date=Future"))
 
- (def zipped (zip/xml-zip events))
+ (def zipped (z/xml-zip events))
 
 ;_exchange.getOut().setBody(createEarthquake(title.substring(7), date, title.substring(2,5), latitude, longitude, depth, area))
