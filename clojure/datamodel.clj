@@ -54,11 +54,6 @@
 ;od ovih mapa hocu da napravim mapu :tag val :content :val
 
 
-
-; creates a map of every column key to it's corresponding value
-;(apply merge (zf/xml-> zipp (zf/attr= :Id "cdx9") :XVar value))
-
-
 (defn add-content [url coll]
   (map :contents (z/xml-zip (xml/parse url)) coll))
 
@@ -67,7 +62,7 @@
 ;parsing and data mapping
 
 ;structs
-(defstruct event :event-name :performers :start-time :end-time)
+(defstruct event :event-name :performers :start-time :stop-time)
 (defstruct event-map  :title  :event-data)
 
 (defstruct artist-lastfm :name :mbid :url :summary)
@@ -85,7 +80,7 @@
  (defn musicBrainzToArtist[xz]
   "Artists from musicBrainz transfered to struct from zipper tree made of feed output"
   (map (juxt 
-        ;#(zf/xml1-> % :name text)  
+        ;#(zf/xml1-> % :name )  
         #(zf/xml1-> % :gender text) 
          #(zf/xml1-> % :country text)
          #(zf/xml1-> % :life-span :begin text)
@@ -107,14 +102,14 @@
 (defn get-events
   [xz] 
   (map (juxt 
-        #(zf/xml1-> % :title text) 
-        #(zf/xml1-> % :performers :performer :name text) 
-        #(zf/xml1-> % :start_time text) 
-         #(zf/xml1-> % :end_time text))
-     (zf/xml-> xz :events :event)))
+        #(zf/xml1-> % :title zf/text) 
+        #(zf/xml1-> % :performers :performer :name zf/text) 
+        #(zf/xml1-> % :start_time zf/text) 
+         #(zf/xml1-> % :stop_time zf/text))
+     (zf/xml-> xz  :events :event)))
 
- (defn create-map-of-events []
-   (map #(apply struct event %) (get-events (z/xml-zip (xml/parse "http://api.eventful.com/rest/events/search?app_key=4H4Vff4PdrTGp3vV&keywords=music&location=Belgrade&date=Future")))))
+ (defn create-map-of-events [event]
+   (map #(apply struct event %)(get-events (z/xml-zip (xml/parse "http://api.eventful.com/rest/events/search?app_key=4H4Vff4PdrTGp3vV&keywords=music&location=Belgrade&date=Future")))))
 
  (defn create-map-of-artists-lastfm  []
   (map #(apply struct artist-lastfm %) (lastFmToArtist (z/xml-zip (xml/parse "http://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=Cher&api_key=b25b959554ed76058ac220b7b2e0a026")))))
