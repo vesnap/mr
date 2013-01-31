@@ -29,7 +29,7 @@
        (def ~(symbol (str "*" name "-meta*"))
          (reduce #(assoc %1 (first %2) (last %2))
                  {}
-                 (partition 2 '~field-spec)))))
+                 (partition 1 '~field-spec)))))
 ;for the content part
 (def data-url "http://api.eventful.com/rest/events/search?app_key=4H4Vff4PdrTGp3vV&keywords=music&location=Belgrade&date=Future")
 
@@ -74,7 +74,21 @@
 (defstruct location :lat :long :name)
 (defstruct image :url :width :height :thumb)
 (defstruct category :id)
+
+(defmacro defentity [name & values]
+  `(defrecord ~name [~@values]))
+
+;all structs to records
+(defrecord event [event-name performers start-time stop-time])
 (def events-url "http://api.eventful.com/rest/events/search?app_key=4H4Vff4PdrTGp3vV&keywords=music&location=Belgrade&date=Future")
+
+(defn to-keys [& args]
+  (for [k args] (vector (map #(keyword %) k))))
+
+
+(defn parsing [xz tags-to-pull tags-start]
+  (for [tagg to-keys(tags-to-pull)](map (juxt #(zf/xml1-> % tagg text))(zf/xml-> xz tags-start))
+  ))
 
 
  (defn musicBrainzToArtist[xz]
@@ -108,6 +122,7 @@
          #(zf/xml1-> % :stop_time zf/text))
      (zf/xml-> xz  :events :event)))
 
+;ovo probaj da prebacis da bude sa obicnom mapom
  (defn create-map-of-events [event]
    (map #(apply struct event %)(get-events (z/xml-zip (xml/parse "http://api.eventful.com/rest/events/search?app_key=4H4Vff4PdrTGp3vV&keywords=music&location=Belgrade&date=Future")))))
 
