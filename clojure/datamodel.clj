@@ -9,27 +9,11 @@
     [clojure.contrib.zip-filter.xml :as zf]
     ))
 
-       
-   ;         [clojure.contrib.zip-filter.xml :as zf]
-    ;        [apicalls]
-     ;       [clojure.java.io]
-      ;      [clojure.contrib.str-utils] ))
- 
 
-
-;internal data model - mapa sa vektorom za content, u content se stavlja ono sto se dobije iz zip str
-;hocu sad ovde ovo da ponovim za svaki tag koji hocu i da spojim dole u mapu
-(defn list-of-contents [the-key] (for [x (xml-seq (xml/parse data-url)) :when (= the-key (:tag x))] (first (:content x))))
-
-(defn create-a-map [the-key](zipmap (list-of-contents the-key) (repeat the-key)))
-
+;internal data model - preko defentity, korisnik definise pa se od keysa napravi mapa preko koje se izvlace podaci
+;
 ;ovo radi ali ne znam posle kako da ga koristim
-(defmacro defmodel [name & field-spec]
-  `(do (defstruct ~name ~@(take-nth 2 field-spec))
-       (def ~(symbol (str "*" name "-meta*"))
-         (reduce #(assoc %1 (first %2) (last %2))
-                 {}
-                 (partition 1 '~field-spec)))))
+
 ;for the content part
 (def data-url "http://api.eventful.com/rest/events/search?app_key=4H4Vff4PdrTGp3vV&keywords=music&location=Belgrade&date=Future")
 
@@ -47,7 +31,7 @@
 ; pulls out a list of all of the root att attribute values
 
 
-(defmacro map-cols [seq & columns] (vec (`(hash-map #(nth % ~columns nil) ~seq))))
+
 (defn data [](en-html/xml-resource data-url));vektor sa svim
 ;(en-html/select data [:events]);mape tih tagova
 ;select value od :tag bude kao tag u toj mapi a select value od :value bude value
@@ -61,7 +45,7 @@
 
 ;parsing and data mapping
 
-;structs
+;structs u defrecorde
 (defstruct event :event-name :performers :start-time :stop-time)
 (defstruct event-map  :title  :event-data)
 
@@ -77,7 +61,7 @@
 
 (defmacro defentity [name & values]
   `(defrecord ~name [~@values]))
-
+(def apis (defentity api-name api-url api-format))
 ;all structs to records
 (defrecord event [event-name performers start-time stop-time])
 (def events-url "http://api.eventful.com/rest/events/search?app_key=4H4Vff4PdrTGp3vV&keywords=music&location=Belgrade&date=Future")
@@ -90,7 +74,8 @@
   (for [tagg to-keys(tags-to-pull)](map (juxt #(zf/xml1-> % tagg text))(zf/xml-> xz tags-start))
   ))
 
-
+;ovo refakorisati tako da zf/xml1-> radi sa jednim pojednim key-em iz rekorda
+;trebace defmacro za ovo
  (defn musicBrainzToArtist[xz]
   "Artists from musicBrainz transfered to struct from zipper tree made of feed output"
   (map (juxt 
