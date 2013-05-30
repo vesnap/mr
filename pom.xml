@@ -12,68 +12,61 @@
     <dependency>
    <groupId>enlive</groupId>
    <artifactId>enlive</artifactId>
-   <version>1.0.0-SNAPSHOT</version>
+    <version>1.1.1</version>
   </dependency>
   <dependency>
   
                         <groupId>ring</groupId>
                         <artifactId>ring-core</artifactId>
-                        <version>0.3.1</version>
+                         <version>1.1.8</version>
                 </dependency>
                 <dependency>
                         <groupId>ring</groupId>
                         <artifactId>ring-jetty-adapter</artifactId>
-                        <version>0.3.1</version>
+                        <version>1.1.8</version>
                 </dependency>
                 <dependency>
       <groupId>net.cgrand</groupId>
       <artifactId>moustache</artifactId>
-      <version>1.0.0-SNAPSHOT</version>
-    </dependency>
+      <version>1.0.0</version>
+                </dependency>
                 <dependency>
                 	<groupId>ring</groupId>
                 	<artifactId>ring-devel</artifactId>
-                	<version>0.3.7</version>
+                	<version>1.1.8</version>
                 </dependency>
+               <dependency>
+  <groupId>compojure</groupId>
+  <artifactId>compojure</artifactId>
+  <version>1.1.5</version>
+</dependency>
                 <dependency>
-                	<groupId>compojure</groupId>
-                	<artifactId>compojure</artifactId>
-                	<version>0.6.2</version>
-                </dependency>
+	<groupId>org.clojure</groupId>
+	<artifactId>data.zip</artifactId>
+	<version>0.1.1</version>
+</dependency>
+            
+              <dependency>
+	<groupId>org.apache.camel</groupId>
+	<artifactId>camel-core</artifactId>
+	<version>2.11.0</version>
+</dependency>
+            
                 <dependency>
-                	<groupId>org.clojure</groupId>
-                	<artifactId>data.zip</artifactId>
-                	<version>0.1.0</version>
-                	<type>jar</type>
-                	<scope>compile</scope>
-                </dependency>
-                <dependency>
-                	<groupId>org.apache.camel</groupId>
-                	<artifactId>camel</artifactId>
-                	<version>2.10.0</version>
-                	<type>pom</type>
-                	<scope>compile</scope>
-                </dependency>
-                <dependency>
-                	<groupId>org.apache.camel</groupId>
-                	<artifactId>camel-component</artifactId>
-                	<version>1.4.0</version>
-                	<type>jar</type>
-                	<scope>compile</scope>
-                </dependency>
+	<groupId>org.apache.camel</groupId>
+	<artifactId>camel-component</artifactId>
+	<version>1.4.0</version>
+</dependency>
+            
                 <dependency>
                 	<groupId>org.clojure</groupId>
                 	<artifactId>clojure</artifactId>
-                	<version>1.5.0-alpha4</version>
-                	<type>jar</type>
-                	<scope>compile</scope>
+                	<version>1.5.1</version>
                 </dependency>
                 <dependency>
                 	<groupId>org.clojure</groupId>
-                	<artifactId>clojure-contrib</artifactId>
-                	<version>1.2.0</version>
-                	<type>jar</type>
-                	<scope>compile</scope>
+                	<artifactId>data.xml</artifactId>
+                	<version>0.0.7</version>
                 </dependency>
 </dependencies>
   <build>

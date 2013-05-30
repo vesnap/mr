@@ -11,7 +11,7 @@
 	   [org.apache.camel ProducerTemplate]
     [org.apache.camel.component.file FileEndpoint]
     [org.apache.camel.component.file FileComponent]))
-
+;to do define fns for transformation, these fns are in datamodel.clj
 (defn file-comp[file-name]
   (FileEndpoint. (str "file://inbox[filename=" file-name "]") (FileComponent. ))) ;+fileName=thefilename.
 

@@ -1,42 +1,59 @@
 (ns datamodel
-(:import (java.io ByteArrayInputStream))
+
   (:use 
     [net.cgrand.enlive-html :as en-html ])
   (:require
     [clojure.zip :as z] 
-    [clojure.data.zip.xml :only (attr text xml->)]
+    [clojure.data.zip.xml :only (attr text xml->) :as xz]
     [clojure.xml :as xml ]
-    [clojure.contrib.zip-filter.xml :as zf]
+    [clojure.data.zip.xml :as zf]
+     [clojure.java.io :as io]
     ))
 
 
-;internal data model - preko defentity, korisnik definise pa se od keysa napravi mapa preko koje se izvlace podaci
-;
-;ovo radi ali ne znam posle kako da ga koristim
+;internal data model - preko defentity, 
+;korisnik definise pa se od keysa napravi mapa preko koje se izvlace podaci
 
-;for the content part
+
 (def data-url "http://api.eventful.com/rest/events/search?app_key=4H4Vff4PdrTGp3vV&keywords=music&location=Belgrade&date=Future")
-
 
 (defn parsing [url](xml/parse url))
 
 (defn zipp [data] (z/xml-zip data))
 
-(defn contents[cont] 
-  (zf/xml-> cont :events :event :title))
+(defn get-content-from-tags [url & tags]
+  (mapcat (comp :content z/node)
+          (apply xz/xml->
+                 (-> url xml/parse z/xml-zip)
+                  (for [t tags]
+                     (zf/tag= t)
+                   ))))
 
-(defn data [url] (en-html/xml-resource url))
+(defn map-tags-contents [url & tags]
+  (map #(hash-map % (keyword (last tags)))
+      (mapcat (comp :content z/node)
+          (apply xz/xml->
+                 (-> url xml/parse z/xml-zip)
+                  (for [t tags]
+                     (zf/tag= t)
+                   )))))
 
-(defn select-data[url] (en-html/select (data url) [:events]))
-; pulls out a list of all of the root att attribute values
 
+(defn merge-lists [& maps]
+  (reduce (fn [m1 m2]
+            (reduce 
+  (fn [m pair] (let [[[k v]] (seq pair)]
+                 (assoc m k (cons v (m k))))) 
+  {} 
+        maps))))
 
+(def titles (map-tags-contents data-url :events :event :title));macro out of this
 
-(defn data [](en-html/xml-resource data-url));vektor sa svim
-;(en-html/select data [:events]);mape tih tagova
-;select value od :tag bude kao tag u toj mapi a select value od :value bude value
-;od ovih mapa hocu da napravim mapu :tag val :content :val
+(def descriptions (map-tags-contents data-url :events :event :description))
 
+(defn create-map [](map conj titles descriptions ));macro out of this
+
+(defn data [url] (en-html/xml-resource url)) 
 
 (defn add-content [url coll]
   (map :contents (z/xml-zip (xml/parse url)) coll))
@@ -59,20 +76,57 @@
 (defstruct image :url :width :height :thumb)
 (defstruct category :id)
 
+;----------!!!!!!!!!!!!!---------------
+;----------!G!L!A!V!N!O!---------------
+;----------!!!!!!!!!!!!!---------------
+
+;for defining entities in the model of the mashup
+;all structs to records
 (defmacro defentity [name & values]
   `(defrecord ~name [~@values]))
+;this fn call has to go in some kind of mapping on vector made of xml data
+
 (def apis (defentity api-name api-url api-format))
-;all structs to records
-(defrecord event [event-name performers start-time stop-time])
+
+;(defrecord event [event-name performers start-time stop-time])
 (def events-url "http://api.eventful.com/rest/events/search?app_key=4H4Vff4PdrTGp3vV&keywords=music&location=Belgrade&date=Future")
 
+
+;for mapping data from the apis to the model
+;we need a macro that will do this
+;for now mapping will be manual
+;(def a_mapping {"att1" :att1 "att2" :att2 "att3" :att3...})
+;using fns - keys
+;and (into {} (map (juxt identity name) [:a :b :c :d]))
+(defn static? [field]
+  (java.lang.reflect.Modifier/isStatic
+   (.getModifiers field)))
+
+(defn get-record-field-names [record]
+    (->> record
+        .getDeclaredFields
+       (remove static?)
+     (map #(.getName %))
+     (remove #{"__meta" "__extmap"})))
+
+(defmacro empty-record [record]
+  (let [klass (Class/forName (name record))
+        field-count (count (get-record-field-names klass))]
+    `(new ~klass ~@(repeat field-count nil))))
+
+;schema matching, define attributes that are used for connecting 2 entities
+(defn eqauls);to bi ili trebao da bude neki meultimetod ili sl
+
+(defn relationship [ent1 ent2 att1 att2] ())
+
+;model to html - enlive in templating
+
 (defn to-keys [& args]
-  (for [k args] (vector (map #(keyword %) k))))
+  (for [k args] (map #(keyword %) k)))
 
-
-(defn parsing [xz tags-to-pull tags-start]
-  (for [tagg to-keys(tags-to-pull)](map (juxt #(zf/xml1-> % tagg text))(zf/xml-> xz tags-start))
-  ))
+;(defn parsing [xz tags-to-pull tags-start]
+ ; (for [tagg to-keys tags-to-pull](map (juxt #(zf/xml1-> % tagg text))(zf/xml1-> xz tags-start))
+  ;))
 
 ;ovo refakorisati tako da zf/xml1-> radi sa jednim pojednim key-em iz rekorda
 ;trebace defmacro za ovo
@@ -118,9 +172,6 @@
   
    (map #(apply struct artist-musicbrainz %) (musicBrainzToArtist (z/xml-zip (xml/parse "http://www.musicbrainz.org/ws/2/artist/?query=artist:cher")))))
  
- 
-
-
 (defn events-for-mashup []
   (let [title "Events mashup" event-data (vector (create-map-of-events))] 
     (apply struct event-map title event-data)))
