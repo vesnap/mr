@@ -4,15 +4,11 @@
     [net.cgrand.enlive-html :as en-html ])
   (:require
     [clojure.zip :as z] 
-    [clojure.data.zip.xml :only (attr text xml->) :as xz]
+  
     [clojure.xml :as xml ]
     [clojure.data.zip.xml :as zf]
      [clojure.java.io :as io]
     ))
-
-
-;internal data model - preko defentity, 
-;korisnik definise pa se od keysa napravi mapa preko koje se izvlace podaci
 
 
 (def data-url "http://api.eventful.com/rest/events/search?app_key=4H4Vff4PdrTGp3vV&keywords=music&location=Belgrade&date=Future")
@@ -23,22 +19,47 @@
 
 (defn get-content-from-tags [url & tags]
   (mapcat (comp :content z/node)
-          (apply xz/xml->
+          (apply zf/xml->
                  (-> url xml/parse z/xml-zip)
-                  (for [t tags]
-                     (zf/tag= t)
+	                  (for [t tags]
+	                     (zf/tag= t)
                    ))))
 
-(defn map-tags-contents [url & tags]
+(defn map-tags-contents [url & tags];ovo izvlaci samo jedan tag, poslednji sa contentom,(map-tags-contents data-url :events :event :title)
   (map #(hash-map % (keyword (last tags)))
       (mapcat (comp :content z/node)
-          (apply xz/xml->
+          (apply zf/xml->
                  (-> url xml/parse z/xml-zip)
                   (for [t tags]
                      (zf/tag= t)
                    )))))
 
+(defn merge-disjoint
+  "Like merge, but throws with any key overlap between maps"
+  ([] {})
+  ([m] m)
+  ([m1 m2]
+     (doseq [k (keys m1)]
+       (when (contains? m2 k) (throw (RuntimeException. (str "Duplicate key " k)))))
+     (into m2 m1))
+  ([m1 m2 & maps]
+     (reduce merge-disjoint m1 (cons m2 maps))))
 
+(defn join ;ovaj join radi za 1 red, sad treba da posaljem ceo vektor sa mapama
+           [m1 m2 key1 key2]
+            (when (= (m1 key1) (m2 key2)) (into  m2 m1)))
+  ;and i  or za join
+
+  
+  
+;za spajanje redova
+  (def data (vector (into  '[] (map-tags-contents data-url :events :event :title)) (into  '[] (map-tags-contents data-url :events :event :venue_name))))
+
+(def merged-data (map (partial apply merge) 
+        (apply map vector data)))
+;ovo moze i sa mapv, ali je on od 1.4 a ovaj projekat je 1.2
+;(apply mapv merge data)
+;mada je malo bzvz, najbolje da se izvuce nekoliko tagova u mapu
 (defn merge-lists [& maps]
   (reduce (fn [m1 m2]
             (reduce 
@@ -47,11 +68,15 @@
   {} 
         maps))))
 
+
+;(defmacro data-snippet [name url &tags];ovo sredi
+ ; `(def ~name (map-tags-contents ~url ~tags)))
+
 (def titles (map-tags-contents data-url :events :event :title));macro out of this
 
 (def descriptions (map-tags-contents data-url :events :event :description))
 
-(defn create-map [](map conj titles descriptions ));macro out of this
+(defn create-map [seq](map conj titles descriptions ));macro out of this
 
 (defn data [url] (en-html/xml-resource url)) 
 
@@ -61,20 +86,6 @@
 ;import data source - connect to data source, 
 
 ;parsing and data mapping
-
-;structs u defrecorde
-(defstruct event :event-name :performers :start-time :stop-time)
-(defstruct event-map  :title  :event-data)
-
-(defstruct artist-lastfm :name :mbid :url :summary)
-
-(defstruct artist-musicbrainz :gender :country :life-span)
-
-(defstruct tag-list :tag :name :url)
-(defstruct venue :id :name :location)
-(defstruct location :lat :long :name)
-(defstruct image :url :width :height :thumb)
-(defstruct category :id)
 
 ;----------!!!!!!!!!!!!!---------------
 ;----------!G!L!A!V!N!O!---------------
@@ -104,7 +115,7 @@
 
 (defn get-record-field-names [record]
     (->> record
-        .getDeclaredFields
+        .getDeclaredFieldsto
        (remove static?)
      (map #(.getName %))
      (remove #{"__meta" "__extmap"})))
@@ -114,10 +125,18 @@
         field-count (count (get-record-field-names klass))]
     `(new ~klass ~@(repeat field-count nil))))
 
-;schema matching, define attributes that are used for connecting 2 entities
-(defn eqauls);to bi ili trebao da bude neki meultimetod ili sl
 
-(defn relationship [ent1 ent2 att1 att2] ())
+;dodavanje podataka u mapu
+;http://jakemccrary.com/blog/2010/06/06/inserting-values-into-a-nested-map-in-clojure/
+;user> (-> (add-to-cache {} :chicago :lakeview :jake)
+ ;         (add-to-cache :sf :mission :dan)
+  ;        (add-to-cache :chicago :wickerpark :alex))
+;{:sf {:mission :dan}, :chicago {:wickerpark :alex, :lakeview :jake}}
+
+(defn add-to-cache [cache key1 key2 data]
+  (assoc-in cache [key1 key2] data))
+
+
 
 ;model to html - enlive in templating
 
@@ -128,8 +147,24 @@
  ; (for [tagg to-keys tags-to-pull](map (juxt #(zf/xml1-> % tagg text))(zf/xml1-> xz tags-start))
   ;))
 
-;ovo refakorisati tako da zf/xml1-> radi sa jednim pojednim key-em iz rekorda
+;ovo refakorisati tako da zf/xml1-> radi sa jednim po jednim key-em iz rekorda
 ;trebace defmacro za ovo
+
+;(map #((apply comp (reverse func)) %) tag-collection)
+
+
+(defn xz [url] (z/xml-zip (xml/parse url)))
+(defn xml-zipper [& tags](zf/xml-> (xz data-url) tags))
+(def func [#(zf/xml1-> (xml-zipper %1) %2 zf/text)])
+
+;ovo vadi iz razlicitih tagova podatke
+(reduce (fn [h item] 
+                         (assoc h (zf/xml1-> item :title zf/text) 
+                                  (zf/xml1-> item :venue_name zf/text))) 
+                       {} (zf/xml-> (xz data-url) :events :event))
+
+
+
  (defn musicBrainzToArtist[xz]
   "Artists from musicBrainz transfered to struct from zipper tree made of feed output"
   (map (juxt 
@@ -151,6 +186,21 @@
          )
      (zf/xml-> xz :artist))
   )
+(defstruct event :event-name :performers :start-time :stop-time)
+
+(defn get-text-from-tag [zipp tag] (zf/xml1-> zipp tag zf/text))
+
+(defn zipped-data [xz &tags] (zf/xml-> xz &tags))
+;prvo treba ovo (def root :events :event)
+;hocu da mogu ovo da napisem (get-events url root source :title :name start_time :stop_time)
+;i iz njega da izadje ovo dole
+(defmacro getting-data [fn-name url root &tags] 
+  `(do
+     (defn ~fn-name [url root &tags] 
+       (map (juxt (get-text-from-tag %)) (zip/xml-zip (xml/parse url)))
+       )))
+(defn do-to-map [amap keyseq f]
+  (reduce #(assoc %1 %2 (f (%1 %2))) amap keyseq))
 
 (defn get-events
   [xz] 
@@ -165,16 +215,16 @@
  (defn create-map-of-events [event]
    (map #(apply struct event %)(get-events (z/xml-zip (xml/parse "http://api.eventful.com/rest/events/search?app_key=4H4Vff4PdrTGp3vV&keywords=music&location=Belgrade&date=Future")))))
 
- (defn create-map-of-artists-lastfm  []
-  (map #(apply struct artist-lastfm %) (lastFmToArtist (z/xml-zip (xml/parse "http://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=Cher&api_key=b25b959554ed76058ac220b7b2e0a026")))))
+; (defn create-map-of-artists-lastfm  []
+ ; (map #(apply struct artist-lastfm %) (lastFmToArtist (z/xml-zip (xml/parse "http://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=Cher&api_key=b25b959554ed76058ac220b7b2e0a026")))))
  
- (defn create-map-of-artists-musicbrainz  []
+; (defn create-map-of-artists-musicbrainz  []
   
-   (map #(apply struct artist-musicbrainz %) (musicBrainzToArtist (z/xml-zip (xml/parse "http://www.musicbrainz.org/ws/2/artist/?query=artist:cher")))))
+ ;  (map #(apply struct artist-musicbrainz %) (musicBrainzToArtist (z/xml-zip (xml/parse "http://www.musicbrainz.org/ws/2/artist/?query=artist:cher")))))
  
-(defn events-for-mashup []
-  (let [title "Events mashup" event-data (vector (create-map-of-events))] 
-    (apply struct event-map title event-data)))
+;(defn events-for-mashup []
+ ; (let [title "Events mashup" event-data (vector (create-map-of-events))] 
+  ;  (apply struct event-map title event-data)))
  
 
 (defn get-performers []
