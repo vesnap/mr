@@ -155,13 +155,44 @@
 
 (defn xz [url] (z/xml-zip (xml/parse url)))
 (defn xml-zipper [& tags](zf/xml-> (xz data-url) tags))
-(def func [#(zf/xml1-> (xml-zipper %1) %2 zf/text)])
-
+(def func #(zf/xml1-> %1 %2 zf/text))
+(def tags [:title :venue_name])
 ;ovo vadi iz razlicitih tagova podatke
-(reduce (fn [h item] 
-                         (assoc h (zf/xml1-> item :title zf/text) 
-                                  (zf/xml1-> item :venue_name zf/text))) 
-                       {} (zf/xml-> (xz data-url) :events :event))
+;(reduce (fn [h item] 
+ ;                        (assoc h (zf/xml1-> item :title zf/text) 
+  ;                                (zf/xml1-> item :venue_name zf/text))) 
+   ;                    {} (zf/xml-> (xz data-url) :events :event))
+;
+
+;(reduce (fn [h item] 
+ ;                        (assoc h (map func [:title :venue_name]))) 
+  ;                     {} (zf/xml-> (xz data-url) :events :event))
+
+
+;;;selecting multiple tags from source
+
+(defn parse [url]
+  (z/xml-zip (xml/parse url)))
+
+(defn selector [tag]
+  (if (sequential? tag)
+    #(apply zf/xml1-> % (concat tag [zf/text]))
+    #(zf/xml1-> % tag zf/text)))
+
+(defn get-events
+  [xml & tags]
+  (let [events (zf/xml-> xml :events :event)
+        fs     (map selector tags)]
+    (map (apply juxt fs) events)))
+
+(def testing
+(-> data-url 
+  parse 
+  (get-events :title :start_time [:performers :performer :name] :stop_time)
+  first 
+  prn))
+
+
 
 
 
@@ -202,7 +233,7 @@
 (defn do-to-map [amap keyseq f]
   (reduce #(assoc %1 %2 (f (%1 %2))) amap keyseq))
 
-(defn get-events
+(defn get-events2
   [xz] 
   (map (juxt 
         #(zf/xml1-> % :title zf/text) 
